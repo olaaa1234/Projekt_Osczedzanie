@@ -163,7 +163,20 @@ with left:
 
         st.markdown("####  Kapitał i wpłaty")
         initial_capital = amount_control("Kapitał początkowy", "initial", 0, 500000, 5000, 500, "zł")
-        monthly_payment = amount_control("Miesięczna wpłata", "monthly", 0, 20000, 500, 50, "zł")
+        monthly_payment = amount_control("Kwota pojedynczej wpłaty", "monthly", 0, 20000, 500, 50, "zł")
+        payment_frequency = st.selectbox(
+            "Jak często dokonujesz wpłat?",
+            ["Co miesiąc", "Co 2 miesiące", "Co 3 miesiące", "Co 6 miesięcy", "Raz w roku"],
+            index=0,
+            key="payment_frequency",
+        )
+        payment_interval = {
+            "Co miesiąc": 1,
+            "Co 2 miesiące": 2,
+            "Co 3 miesiące": 3,
+            "Co 6 miesięcy": 6,
+            "Raz w roku": 12,
+        }[payment_frequency]
         years = amount_control("Okres oszczędzania", "years", 1, 40, 10, 1, "lat")
 
         st.markdown("---")
@@ -213,19 +226,20 @@ with right:
         cash_deposits = [(0, float(initial_capital))]
 
         for month in range(1, months + 1):
+            payment_due = month % payment_interval == 0
             payment_year = (month - 1) // 12
             current_payment = float(monthly_payment) * (
                 (1 + annual_payment_growth / 100) ** payment_year if increase_payments else 1
             )
 
-            if payment_timing == "Na początku miesiąca":
+            if payment_due and payment_timing == "Na początku miesiąca":
                 balance += current_payment
                 paid_in += current_payment
                 cash_deposits.append((month - 1, current_payment))
 
             accrued_interest += balance * (annual_rate / 100) / 12
 
-            if payment_timing == "Na końcu miesiąca":
+            if payment_due and payment_timing == "Na końcu miesiąca":
                 balance += current_payment
                 paid_in += current_payment
                 cash_deposits.append((month, current_payment))
@@ -430,12 +444,12 @@ with st.container(key="annual-table-panel", border=True):
     with st.expander("Jak obliczane są wyniki?", expanded=False):
         st.markdown(
             f"""
-            - **Wpłaty:** {payment_timing.lower()}, {monthly_payment:,.0f} zł miesięcznie.
+            - **Wpłaty:** {payment_timing.lower()}, {money(monthly_payment)} {payment_frequency.lower()}.
             - **Oprocentowanie:** stałe nominalne {annual_rate:.1f}% rocznie, naliczane w modelu miesięcznym.
             - **Kapitalizacja:** {capitalization.lower()}.
             - **Podatek:** {'19% od kapitalizowanych odsetek' if deduct_tax else 'pominięty'}.
             - **Inflacja:** {'średnio ' + format(inflation_rate, '.1f') + '% rocznie' if include_inflation else 'pominięta'}.
-            - **Zmiana wpłat:** {'wzrost o ' + format(annual_payment_growth, '.1f') + '% rocznie' if increase_payments else 'stała miesięczna wpłata'}.
+            - **Zmiana wpłat:** {'wzrost o ' + format(annual_payment_growth, '.1f') + '% rocznie' if increase_payments else 'stała kwota pojedynczej wpłaty'}.
 
             Model ma charakter edukacyjny i upraszcza zasady naliczania odsetek oraz podatku.
             Nie uwzględnia opłat, limitów ani zmienności oprocentowania konkretnego produktu.
@@ -486,7 +500,7 @@ with st.container(border=True):
     st.caption(
         f"Porównywane oprocentowanie: {lower_rate:.1f}% (niższe) · "
         f"{annual_rate:.1f}% (podstawowe) · {higher_rate:.1f}% (wyższe). "
-        "Pozostałe parametry pozostają bez zmian."
+        "Pozostałe parametry, w tym częstotliwość wpłat, pozostają bez zmian."
     )
 
     def simulate_rate_for_comparison(rate):
@@ -496,18 +510,19 @@ with st.container(border=True):
         annual_rows = []
 
         for month in range(1, int(years) * 12 + 1):
+            payment_due = month % payment_interval == 0
             payment_year = (month - 1) // 12
             current_payment = float(monthly_payment) * (
                 (1 + annual_payment_growth / 100) ** payment_year
                 if increase_payments else 1
             )
 
-            if payment_timing == "Na początku miesiąca":
+            if payment_due and payment_timing == "Na początku miesiąca":
                 balance += current_payment
 
             accrued_interest += balance * (rate / 100) / 12
 
-            if payment_timing == "Na końcu miesiąca":
+            if payment_due and payment_timing == "Na końcu miesiąca":
                 balance += current_payment
 
             if month % capitalization_months == 0 or month == int(years) * 12:
@@ -590,7 +605,7 @@ with st.container(border=True):
 
     st.caption(
         "Wykres pokazuje saldo na koniec każdego roku. Podatek, kapitalizacja, moment wpłaty "
-        "i ewentualny coroczny wzrost wpłat są takie same jak w głównej symulacji."
+        "i częstotliwość wpłat są takie same jak w głównej symulacji."
     )
 
 
@@ -598,3 +613,146 @@ st.markdown(
     '<div class="note-box"><b>Ważne:</b> Finansowy Kompas ma charakter edukacyjny. Wyniki symulacji zależą od przyjętych założeń i nie stanowią oferty banku, gwarancji zysku ani indywidualnej rekomendacji finansowej.</div>',
     unsafe_allow_html=True
 )
+
+# ---------------------------------------------------------
+# 05 / Planowanie celu oszczędnościowego
+# ---------------------------------------------------------
+st.markdown("<br>", unsafe_allow_html=True)
+
+with st.container(border=True):
+    st.markdown(
+        '<div class="section-label">05 / Twój cel</div>'
+        '<div class="section-title">Ile musisz odkładać, aby osiągnąć swój cel?</div>'
+        '<div class="section-subtitle">Podaj kwotę docelową, termin i zakładane oprocentowanie. '
+        'Kalkulator wyznaczy wymaganą stałą miesięczną wpłatę.</div>',
+        unsafe_allow_html=True,
+    )
+
+    goal_col1, goal_col2 = st.columns(2, gap="large")
+
+    with goal_col1:
+        goal_amount = st.number_input(
+            "Jaki kapitał chcesz zgromadzić? (zł)",
+            min_value=100.0,
+            max_value=10000000.0,
+            value=50000.0,
+            step=1000.0,
+            key="goal_amount",
+        )
+        goal_years = st.number_input(
+            "W jakim czasie chcesz osiągnąć cel? (lata)",
+            min_value=1,
+            max_value=40,
+            value=5,
+            step=1,
+            key="goal_years",
+        )
+        goal_rate = st.number_input(
+            "Zakładane oprocentowanie nominalne (% rocznie)",
+            min_value=0.0,
+            max_value=20.0,
+            value=5.0,
+            step=0.1,
+            key="goal_rate",
+            help="Wpisz przewidywane oprocentowanie produktu, z którego planujesz korzystać.",
+        )
+
+    with goal_col2:
+        goal_initial = st.number_input(
+            "Ile masz już odłożone? (zł)",
+            min_value=0.0,
+            max_value=10000000.0,
+            value=float(initial_capital),
+            step=500.0,
+            key="goal_initial",
+        )
+        goal_capitalization = st.selectbox(
+            "Kapitalizacja odsetek",
+            ["Miesięczna", "Kwartalna", "Półroczna", "Roczna"],
+            index=0,
+            key="goal_capitalization",
+        )
+        goal_tax = st.checkbox(
+            "Uwzględnij 19% podatek od zysków kapitałowych",
+            value=True,
+            key="goal_tax",
+        )
+        goal_timing = st.radio(
+            "Moment comiesięcznej wpłaty",
+            ["Na początku miesiąca", "Na końcu miesiąca"],
+            key="goal_timing",
+        )
+
+    goal_months = int(goal_years) * 12
+    goal_cap_months = {
+        "Miesięczna": 1,
+        "Kwartalna": 3,
+        "Półroczna": 6,
+        "Roczna": 12,
+    }[goal_capitalization]
+    goal_tax_rate = 0.19 if goal_tax else 0.0
+
+    def goal_future_value(monthly_amount):
+        """Saldo końcowe obliczane zgodnie z uproszczonym modelem symulatora."""
+        balance = float(goal_initial)
+        accrued_interest = 0.0
+
+        for month in range(1, goal_months + 1):
+            if goal_timing == "Na początku miesiąca":
+                balance += monthly_amount
+
+            accrued_interest += balance * (float(goal_rate) / 100.0) / 12.0
+
+            if goal_timing == "Na końcu miesiąca":
+                balance += monthly_amount
+
+            if month % goal_cap_months == 0 or month == goal_months:
+                balance += accrued_interest * (1.0 - goal_tax_rate)
+                accrued_interest = 0.0
+
+        return balance
+
+    st.markdown("---")
+    if goal_initial >= goal_amount:
+        st.success(
+            "Masz już zgromadzony kapitał równy lub wyższy od wyznaczonego celu. "
+            "Dodatkowe miesięczne wpłaty nie są konieczne, aby osiągnąć tę kwotę."
+        )
+        required_monthly = 0.0
+        projected_goal_balance = goal_future_value(0.0)
+    else:
+        # Wyszukiwanie binarne minimalnej miesięcznej wpłaty.
+        low, high = 0.0, max(float(goal_amount), 1.0)
+        for _ in range(100):
+            mid = (low + high) / 2.0
+            if goal_future_value(mid) >= goal_amount:
+                high = mid
+            else:
+                low = mid
+
+        required_monthly = high
+        projected_goal_balance = goal_future_value(required_monthly)
+
+        if goal_future_value(0.0) >= goal_amount:
+            required_monthly = 0.0
+            projected_goal_balance = goal_future_value(0.0)
+
+        st.markdown(
+            f'<div class="result-highlight">'
+            f'<div class="label">Wymagana miesięczna wpłata</div>'
+            f'<div class="value">{money(required_monthly)}</div>'
+            f'<div class="hint">Aby zgromadzić {money(goal_amount)} w ciągu {goal_years} lat '
+            f'przy oprocentowaniu {goal_rate:.1f}% rocznie.</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    goal_k1, goal_k2, goal_k3 = st.columns(3)
+    goal_k1.metric("Cel oszczędnościowy", money(goal_amount))
+    goal_k2.metric("Suma przyszłych wpłat", money(required_monthly * goal_months))
+    goal_k3.metric("Prognozowany kapitał", money(projected_goal_balance))
+
+    st.caption(
+        "Wynik zakłada stałe oprocentowanie przez cały okres, regularne wpłaty w tej samej wysokości "
+        "oraz wskazaną kapitalizację i podatek. Nie uwzględnia opłat ani zmienności oprocentowania. "
+        "To symulacja edukacyjna, a nie gwarancja osiągnięcia celu."
+    )
